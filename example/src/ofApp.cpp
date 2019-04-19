@@ -2,6 +2,8 @@
 
 
 void ofApp::setup() {
+
+	ofSetLogLevel("ofxFFmpegRecorder", OF_LOG_VERBOSE);
     
     m_Grabber.setup(640, 480);
     mCapFbo.allocate( m_Grabber.getWidth(), m_Grabber.getHeight(), GL_RGB );
@@ -16,8 +18,10 @@ void ofApp::setup() {
      * You can also use the following methods to crop the output file
      *     m_Recorder.addAdditionalOutputArgument("-vf \"crop=300:300:0:0\"");
      * Or you can change the output codec
-     *     m_Recorder.setVideCodec("libx264");
+     *     m_Recorder.setVideoCodec("libx264");
      **/
+
+	font.load("Courier New", 48);
 }
 
 void ofApp::update() {
@@ -32,6 +36,8 @@ void ofApp::draw() {
         ofSetColor(ofColor::green);
         if( m_Recorder.isRecording() ) ofSetColor( ofColor::red );
         ofDrawCircle( mCapFbo.getWidth()/2, mCapFbo.getHeight()/2, ((sin( ofGetElapsedTimef() * 6.) * 0.5 + 0.5) + 0.5) * 100 + 20);
+		ofScale(mCapFbo.getWidth() / 640, mCapFbo.getHeight() / 480);
+		font.drawString(ofToString(m_Recorder.isRecording() ? m_Recorder.getRecordedDuration() : 0, 1) + "s", 20, 440);
     } mCapFbo.end();
     
     if( m_Recorder.isRecording() ) {

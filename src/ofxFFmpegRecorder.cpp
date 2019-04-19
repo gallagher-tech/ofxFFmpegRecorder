@@ -5,9 +5,10 @@
 #include "ofSoundStream.h"
 
 // Logging macros
-#define LOG_ERROR(message) ofLogError("") << __FUNCTION__ << ":" << __LINE__ << ": " << message
-#define LOG_WARNING(message) ofLogWarning("") << __FUNCTION__ << ":" << __LINE__ << ": " << message
-#define LOG_NOTICE(message) ofLogNotice("") << __FUNCTION__ << ":" << __LINE__ << ": " << message
+#define LOG_ERROR(message)      ofLogError("ofxFFmpegRecorder") << __FUNCTION__ << ":" << __LINE__ << ": " << message
+#define LOG_WARNING(message)    ofLogWarning("ofxFFmpegRecorder") << __FUNCTION__ << ":" << __LINE__ << ": " << message
+#define LOG_NOTICE(message)     ofLogNotice("ofxFFmpegRecorder") << __FUNCTION__ << ":" << __LINE__ << ": " << message
+#define LOG_VERBOSE(message)    ofLogVerbose("ofxFFmpegRecorder") << __FUNCTION__ << ":" << __LINE__ << ": " << message
 
 ofxFFmpegRecorder::ofxFFmpegRecorder()
     : m_FFmpegPath("ffmpeg")
@@ -24,7 +25,7 @@ ofxFFmpegRecorder::ofxFFmpegRecorder()
     , m_TotalPauseDuration(0.f)
     , m_DefaultVideoDevice()
     , m_DefaultAudioDevice()
-    , m_VideCodec("mpeg4")
+    , m_VideoCodec("mpeg4")
     , m_CustomRecordingFile(nullptr)
     , m_DefaultRecordingFile(nullptr)
 {
@@ -189,7 +190,7 @@ void ofxFFmpegRecorder::setBitRate(unsigned int rate)
 
 std::string ofxFFmpegRecorder::getVideoCodec() const
 {
-    return m_VideCodec;
+    return m_VideoCodec;
 }
 
 void ofxFFmpegRecorder::setVideoCodec(const std::string &codec)
@@ -198,7 +199,7 @@ void ofxFFmpegRecorder::setVideoCodec(const std::string &codec)
         LOG_NOTICE("A recording is in proggress. The change will take effect for the next recording session.");
     }
 
-    m_VideCodec = codec;
+    m_VideoCodec = codec;
 }
 
 float ofxFFmpegRecorder::getWidth() {
@@ -260,7 +261,7 @@ float ofxFFmpegRecorder::getRecordedDuration() const
 bool ofxFFmpegRecorder::record(float duration)
 {
     if (isRecording()) {
-        LOG_ERROR("A recording is already in proggress.");
+        LOG_ERROR("A recording is already in progress.");
         return false;
     }
 
@@ -362,7 +363,7 @@ bool ofxFFmpegRecorder::startCustomRecord()
     args.push_back("-i -");
     
 
-    args.push_back("-vcodec " + m_VideCodec);
+    args.push_back("-vcodec " + m_VideoCodec);
     args.push_back("-b:v " + std::to_string(m_BitRate) + "k");
     args.push_back("-r " + std::to_string(m_Fps));
     args.push_back("-framerate " + std::to_string(m_Fps));
@@ -376,6 +377,8 @@ bool ofxFFmpegRecorder::startCustomRecord()
         cmd += arg + " ";
     }
 
+    LOG_VERBOSE( "starting custom recording with command:\n\t" + cmd );
+
 #if defined(_WIN32)
     m_CustomRecordingFile = _popen(cmd.c_str(), "wb");
 #else
@@ -383,7 +386,9 @@ bool ofxFFmpegRecorder::startCustomRecord()
     m_CustomRecordingFile = popen( cmd.c_str(), "w" );
 #endif // _WIN32
 
-    return true;
+	m_IsRecording = true;
+
+	return true;
 }
 
 size_t ofxFFmpegRecorder::addFrame(const ofPixels &pixels)
@@ -427,14 +432,18 @@ size_t ofxFFmpegRecorder::addFrame(const ofPixels &pixels)
 void ofxFFmpegRecorder::stop()
 {
     if (m_CustomRecordingFile) {
-        #if defined(_WIN32)
-        _pclose(m_CustomRecordingFile);
-        #else
-        pclose(m_CustomRecordingFile);
-        #endif
-        m_CustomRecordingFile = nullptr;
-        m_AddedVideoFrames = 0;
-        joinThread();
+
+        // #if defined(_WIN32)
+        // _pclose(m_CustomRecordingFile);
+        // #else
+        // pclose(m_CustomRecordingFile);
+        // #endif
+        // m_CustomRecordingFile = nullptr;
+        // m_AddedVideoFrames = 0;
+        // joinThread();
+
+        // todo: join the thread
+
     }
     else if (m_DefaultRecordingFile) {
         fwrite("q", sizeof(char), 1, m_DefaultRecordingFile);
@@ -445,6 +454,8 @@ void ofxFFmpegRecorder::stop()
         #endif
         m_DefaultRecordingFile = nullptr;
     }
+
+	m_IsRecording = false;
 }
 
 void ofxFFmpegRecorder::cancel()
@@ -470,6 +481,8 @@ void ofxFFmpegRecorder::cancel()
     }
 
     ofFile::removeFile(m_OutputPath, false);
+
+	m_IsRecording = false;
 }
 
 bool ofxFFmpegRecorder::isOverWrite() const
@@ -546,7 +559,7 @@ void ofxFFmpegRecorder::clearAdditionalArguments()
 
 bool ofxFFmpegRecorder::isRecording() const
 {
-    return m_DefaultRecordingFile != nullptr || m_CustomRecordingFile != nullptr;
+	return m_IsRecording; // m_DefaultRecordingFile != nullptr || m_CustomRecordingFile != nullptr;
 }
 
 bool ofxFFmpegRecorder::isRecordingCustom() const
@@ -650,28 +663,76 @@ void ofxFFmpegRecorder::determineDefaultDevices()
         }
     }
 }
-
 void ofxFFmpegRecorder::processFrame()
 {
-    while (isRecording()) {
-        ofPixels *pixels = nullptr;
-        if (m_Frames.consume(pixels) && pixels) {
-            const unsigned char *data = pixels->getData();
-            const size_t dataLength = m_VideoSize.x * m_VideoSize.y * 3;
-            const size_t written = fwrite(data, sizeof(char), dataLength, m_CustomRecordingFile);
-            if (written <= 0) {
-                LOG_WARNING("Cannot write the frame.");
-            }
+    while( isRecording() ) {
 
-            pixels->clear();
-            delete pixels;
+        HighResClock lastFrameTime = std::chrono::high_resolution_clock::now();
+
+        while( m_Frames.size() ) {  // allows finish processing queue after we call stop()
+
+            // feed frames at constant fps
+            const float recordedDuration	= getRecordedDuration();
+            HighResClock now				= std::chrono::high_resolution_clock::now();
+            float delta						= std::chrono::duration<float>( now - lastFrameTime ).count();
+            const float framerate			= 1.f / m_Fps;
+
+            if( delta >= framerate ) {
+
+                //delta -= framerate;
+
+                ofPixels* pixels = nullptr;
+
+                if( m_Frames.consume( pixels ) && pixels ) {
+                    const unsigned char *data	= pixels->getData();
+                    const size_t dataLength		= m_VideoSize.x * m_VideoSize.y * 3;
+                    const size_t written		= m_CustomRecordingFile ? fwrite( data, sizeof( char ), dataLength, m_CustomRecordingFile ) : 0;
+
+                    if( written <= 0 ) {
+                        LOG_WARNING( "Cannot write the frame." );
+                    }
+
+                    pixels->clear();
+                    delete pixels;
+
+                    lastFrameTime = std::chrono::high_resolution_clock::now();
+                }
+            }
         }
     }
+
+    //finishFrameQueue( timeout );
+    if( m_CustomRecordingFile ) {
+
+        // close the ffmpeg pipe / process when done with frame queue
+
+        try {
+#if defined(_WIN32)
+            _pclose( m_CustomRecordingFile );
+#else
+            pclose( m_CustomRecordingFile );
+#endif
+
+        } catch( ... ) {
+            LOG_ERROR( "error closing pipe" );
+        }
+
+    }
+
+    m_CustomRecordingFile = nullptr;
+    m_AddedVideoFrames = 0;
 }
 
-void ofxFFmpegRecorder::joinThread()
+bool ofxFFmpegRecorder::joinThread()
 {
-    if (m_Thread.joinable()) {
+    if( m_Thread.joinable() ) {
+        LOG_VERBOSE( "joining thread" );
         m_Thread.join();
+        LOG_VERBOSE( "thread joined" );
+        return true;
+
+    } else {
+        LOG_VERBOSE( "thread not joinable" );
+        return false;
     }
 }

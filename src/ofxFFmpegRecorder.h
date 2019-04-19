@@ -262,7 +262,7 @@ private:
      */
     ofSoundDevice m_DefaultAudioDevice;
 
-    std::string m_VideCodec;
+    std::string m_VideoCodec;
     FILE *m_CustomRecordingFile, *m_DefaultRecordingFile;
 
     /**
@@ -293,6 +293,12 @@ private:
      * @brief Runs in parallele and writes the stored frames to ffmpeg
      */
     void processFrame();
-    void joinThread();
+    bool joinThread();
+
+	/**
+	* @brief Recording flag
+	*/
+	bool m_IsRecording;
+
 
 };

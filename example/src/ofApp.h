@@ -32,4 +32,6 @@ private:
     
     ofFbo mCapFbo;
     ofPixels mPix;
+	ofTrueTypeFont font;
+
 };
