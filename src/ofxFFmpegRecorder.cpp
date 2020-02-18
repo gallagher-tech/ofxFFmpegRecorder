@@ -348,12 +348,11 @@ bool ofxFFmpegRecorder::startCustomRecord()
     m_AddedVideoFrames = 0;
 
     std::vector<std::string> args;
-    std::copy(m_AdditionalInputArguments.begin(), m_AdditionalInputArguments.end(), std::back_inserter(args));
 
 	//args.push_back("-pix_fmts");
-    args.push_back("-y");
-    args.push_back("-an");
-    args.push_back("-r " + std::to_string(m_Fps));
+    args.push_back("-y");   // overwrite
+    args.push_back("-an");  // disable audio
+    args.push_back("-r " + std::to_string(m_Fps));  // frame rate
     args.push_back("-framerate " + std::to_string(m_Fps));
     args.push_back("-s " + std::to_string(static_cast<unsigned int>(m_VideoSize.x)) + "x" + std::to_string(static_cast<unsigned int>(m_VideoSize.y)));
     args.push_back("-f rawvideo");
@@ -363,19 +362,23 @@ bool ofxFFmpegRecorder::startCustomRecord()
     args.push_back("-i -");
     
 
-    args.push_back("-vcodec " + m_VideoCodec);
-    args.push_back("-b:v " + std::to_string(m_BitRate) + "k");
-    args.push_back("-r " + std::to_string(m_Fps));
-    args.push_back("-framerate " + std::to_string(m_Fps));
+    //args.push_back("-vcodec " + m_VideoCodec);
+    //args.push_back("-b:v " + std::to_string(m_BitRate) + "k");
+    //args.push_back("-r " + std::to_string(m_Fps));
+    //args.push_back("-framerate " + std::to_string(m_Fps));
     std::copy(m_AdditionalOutputArguments.begin(), m_AdditionalOutputArguments.end(), std::back_inserter(args));
     
     args.push_back(m_OutputPath);
 //    args.push_back("-codecs ");
 
     std::string cmd = m_FFmpegPath + " ";
-    for (auto arg : args) {
-        cmd += arg + " ";
-    }
+    //for (auto arg : args) {
+    //    cmd += arg + " ";
+    //}
+
+    //cmd += "-y -an -r 30 -s 3840x2160 -f rawvideo -pix_fmt rgb24 -i pipe: -pix_fmt yuv420p -r 30 out.y4m";     //-vcodec rawvideo -r 30 out.vid";
+    //cmd += "-y -an -r 30 -s 3840x2160 -f rawvideo -pix_fmt rgb24 -i pipe: -c:v h264_nvenc -pix_fmt yuv420p out.mp4";    //-profile:v high -preset fast 
+    cmd += "-y -an -r " + ofToString(m_Fps, 0) + " -s 3840x2160 -f rawvideo -pix_fmt rgb24 -i pipe: -pix_fmt yuv420p -c:v libx264 -r " + ofToString(m_Fps,0) + " -crf 0 -preset ultrafast -tune zerolatency out.mp4";
 
     LOG_VERBOSE( "starting custom recording with command:\n\t" + cmd );
 
